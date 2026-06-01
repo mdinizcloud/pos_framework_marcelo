@@ -1,0 +1,2 @@
+**Justificativa:**
+Esse framework é a melhor escolha porque lida com uma entrega de alta governança e replicação. O Context e a Action garantem que as travas rígidas de segurança sejam aplicadas no código novo, enquanto o Result e o Example guiam o modelo a entregar não só a infraestrutura correta, mas também a documentação prática baseada no padrão que a empresa já usa.

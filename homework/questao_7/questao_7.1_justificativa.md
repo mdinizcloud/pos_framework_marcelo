@@ -1,0 +1,2 @@
+**Justificativa:**
+Esse framework é a melhor escolha porque padroniza processos operacionais críticos e sequenciais. O Role e o Input alinham o nível técnico do operador com o cenário de crise real, enquanto os Steps e a Expectation garantem que o modelo crie uma receita exata, com comandos e saídas esperadas, eliminando o erro humano e a variação no tempo de resposta do incidente.

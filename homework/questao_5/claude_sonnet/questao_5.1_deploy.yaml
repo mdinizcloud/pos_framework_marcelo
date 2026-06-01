@@ -1,0 +1,353 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: chronos-api-secrets
+  namespace: production
+  labels:
+    app: chronos-api
+    version: v2.0
+type: Opaque
+data:
+  # Base64 encoded values - sempre use secret store em produção (Vault, AWS Secrets Manager)
+  db-password: UEBzc3cwcmQyMDIzIQ==      # P@ssw0rd2023!
+  jwt-secret: aHZ0LWp3dC1wcm9kLXNlY3JldA==  # hvt-jwt-prod-secret
+
+# ℹ️ NOTA IMPORTANTE:
+# Este Secret utiliza armazenamento em plaintext no etcd (não criptografado por padrão).
+# Em produção corporativa, implemente:
+# - Encryption at rest no etcd (enable --encryption-provider-config)
+# - External Secret Store: HashiCorp Vault, AWS Secrets Manager, Google Secret Manager
+# - RBAC restritivo no acesso 
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chronos-api
+  namespace: production
+  labels:
+    app: chronos-api
+    version: v2.0
+    team: platform-engineering
+    environment: production
+  annotations:
+    description: "Chronos API - High Availability Deployment"
+    contact: platform-team@company.com
+    documentation: "https://wiki.company.com/chronos-api"
+    runbook: "https://wiki.company.com/chronos-api/runbook"
+
+spec:
+  # ========================
+  # 📊 REPLICAS & STRATEGY
+  # ========================
+  # 3 réplicas garantem tolerância a falhas de 1 node
+  # RollingUpdate garante zero downtime durante atualizações
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # 1 pod extra durante rolling update
+      maxUnavailable: 1  # Máximo 1 pod indisponível por vez (evita downtime)
+
+  # ========================
+  # 🏷️ POD SELECTOR
+  # ========================
+  selector:
+    matchLabels:
+      app: chronos-api
+
+  # ========================
+  # 📝 POD TEMPLATE
+  # ========================
+  template:
+    metadata:
+      labels:
+        app: chronos-api
+        version: v2.0
+        tier: backend
+      annotations:
+        prometheus-scrape: "true"
+        prometheus-port: "8080"
+        prometheus-path: "/metrics"
+
+    spec:
+      # ========================
+      # 🔐 POD-LEVEL SECURITY
+      # ========================
+      # Estas configurações aplicam-se a TODOS os containers do pod
+      securityContext:
+        runAsNonRoot: true        # Força execução como usuário não-root
+        runAsUser: 10001          # UID específico (não root=0, não ninguém=65534)
+        runAsGroup: 10001
+        fsGroup: 10001            # Grupo para volumes
+        seccompProfile:
+          type: RuntimeDefault    # Usa perfil seccomp padrão do runtime
+        supplementalGroups: []     # Sem grupos supplementais
+        seLinuxOptions:
+          level: "s0:c123,c456"  # SELinux context (se aplicável)
+
+      # ========================
+      # 🤝 POD AFFINITY (Anti-Afinidade)
+      # ========================
+      # Garante que 3 pods rodem em 3 nodes diferentes
+      # Aumenta disponibilidade e utilização de recursos do cluster
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - chronos-api
+              topologyKey: kubernetes.io/hostname
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - chronos-api
+                topologyKey: topology.kubernetes.io/zone
+
+      # ========================
+      # 🔄 POD RESTART POLICY
+      # ========================
+      restartPolicy: Always  # Sempre reinicia pods que falham
+      terminationGracePeriodSeconds: 30  # Tempo para shutdown gracioso
+
+      # ========================
+      # 📋 CONTAINERS
+      # ========================
+      containers:
+      - name: api
+        # ========================
+        # 🐳 IMAGE & PULL POLICY
+        # ========================
+        # v2.1.0: Versão imutável (não latest!)
+        # Permite rollback, auditoria e controle de versão exato
+        image: chronos-api:v2.1.0
+        imagePullPolicy: IfNotPresent  # Reduz pulls desnecessários; usa cache local
+
+        # ========================
+        # 🌐 PORTS & PROTOCOLS
+        # ========================
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+
+        # ========================
+        # 🔐 CONTAINER-LEVEL SECURITY
+        # ========================
+        # Restrições específicas do container (mais restritivas que pod level)
+        securityContext:
+          allowPrivilegeEscalation: false  # Bloqueia escalação de privilégio
+          readOnlyRootFilesystem: true     # Root FS imutável (apenas /tmp,/var/tmp,/var/run writable)
+          runAsNonRoot: true
+          runAsUser: 10001
+          runAsGroup: 10001
+          capabilities:
+            drop:
+              - ALL                  # Remove TODAS as Linux capabilities
+            add:
+              - NET_BIND_SERVICE     # Apenas se necessário bindear porta <1024 (raro)
+
+        # ========================
+        # 🔗 ENVIRONMENT VARIABLES
+        # ========================
+        env:
+        # Variáveis não-sensíveis direto no YAML
+        - name: LOG_LEVEL
+          value: "info"
+        - name: PORT
+          value: "8080"
+        - name: NODE_ENV
+          value: "production"
+
+        # ========================
+        # 🔐 SECRETS VIA REFERENCE
+        # ========================
+        # Referencia valores do Secret criado acima
+        # Kubernetes injeta em variáveis de env sem expor no manifesto
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: chronos-api-secrets
+              key: db-password
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: chronos-api-secrets
+              key: jwt-secret
+
+        # ========================
+        # 💾 RESOURCE REQUESTS & LIMITS
+        # ========================
+        # REQUESTS: Garantia de recursos que o pod recebe
+        # LIMITS: Máximo de recursos que o pod pode consumir
+        # Valores baseados em métricas reais de API web Nodejs típica
+        resources:
+          requests:
+            cpu: "200m"              # 0.2 CPUs garantidas
+            memory: "256Mi"          # 256 MB garantido
+          limits:
+            cpu: "500m"              # Máximo 0.5 CPUs
+            memory: "512Mi"          # Máximo 512 MB
+
+        # ========================
+        # ❤️ HEALTH CHECKS
+        # ========================
+        # LIVENESS: Container está "vivo"? Se não, mata e reinicia
+        # READINESS: Container está pronto para receber traffic?
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http              # Usa nome definido em ports
+            scheme: HTTP
+          initialDelaySeconds: 30    # Espera 30s antes do primeiro check
+          periodSeconds: 10          # Verifica a cada 10s
+          timeoutSeconds: 5          # Timeout de 5s por check
+          failureThreshold: 3        # Falha após 3 tentativas
+          successThreshold: 1        # Sucesso após 1 tentativa
+
+        readinessProbe:
+          httpGet:
+            path: /health/ready      # Endpoint específico de readiness
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 10    # Check mais cedo (app inicia rápido)
+          periodSeconds: 5           # Verifica a cada 5s (mais frequente)
+          timeoutSeconds: 3
+          failureThreshold: 2
+          successThreshold: 1        # Precisa 1 sucesso para volta online
+
+        # ========================
+        # 📂 VOLUME MOUNTS
+        # ========================
+        volumeMounts:
+        # Diretório temporário com permissões de escrita
+        # Necessário se app escreve em /tmp (readonly root FS)
+        - name: tmp-dir
+          mountPath: /tmp
+        - name: var-cache-dir
+          mountPath: /var/cache
+
+      # ========================
+      # 📦 VOLUMES
+      # ========================
+      volumes:
+      # EmptyDir: Volume efêmero que vive enquanto o pod vive
+      # Perfeito para /tmp, cache, dados temporários
+      - name: tmp-dir
+        emptyDir:
+          sizeLimit: 100Mi  # Limite de 100Mi para /tmp
+      - name: var-cache-dir
+        emptyDir:
+          sizeLimit: 50Mi
+
+      # ========================
+      # ⏱️ GRACEFUL SHUTDOWN
+      # ========================
+      terminationGracePeriodSeconds: 30  # Tempo para encerrar graciosamente
+      serviceAccountName: chronos-api    # SA específica (requer RBAC)
+
+---
+
+# ========================
+# 🔑 SERVICE ACCOUNT
+# ========================
+# Identity do pod no cluster - necessária para RBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chronos-api
+  namespace: production
+  labels:
+    app: chronos-api
+
+---
+
+# ========================
+# 🛡️ ROLE-BASED ACCESS CONTROL (RBAC)
+# ========================
+# Define permissões mínimas que o pod precisa
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: chronos-api
+  namespace: production
+rules:
+# Pode ler Secrets apenas do namespace
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list"]
+  resourceNames: ["chronos-api-secrets"]  # Apenas este Secret
+
+# Pode ler ConfigMaps (se usar)
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list"]
+
+---
+
+# ========================
+# 🔗 ROLE BINDING
+# ========================
+# Conecta ServiceAccount com Role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: chronos-api
+  namespace: production
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: chronos-api
+subjects:
+- kind: ServiceAccount
+  name: chronos-api
+  namespace: production
+
+---
+
+# ========================
+# 🌐 SERVICE (Exposição)
+# ========================
+# Service roteia traffic para os 3 pods do Deployment
+apiVersion: v1
+kind: Service
+metadata:
+  name: chronos-api
+  namespace: production
+  labels:
+    app: chronos-api
+spec:
+  type: ClusterIP       # Apenas intra-cluster (use Ingress para externo)
+  selector:
+    app: chronos-api
+  ports:
+  - name: http
+    port: 80            # Port do Service
+    targetPort: http    # Nome do port do container
+    protocol: TCP
+
+---
+
+# ========================
+# 📊 POD DISRUPTION BUDGET (PDB)
+# ========================
+# Garante sempre N pods rodando durante perturbações (rolling updates, manutenção)
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: chronos-api
+  namespace: production
+spec:
+  minAvailable: 2       # Sempre 2+ pods disponíveis (tolera falha de 1)
+  selector:
+    matchLabels:
+      app: chronos-api

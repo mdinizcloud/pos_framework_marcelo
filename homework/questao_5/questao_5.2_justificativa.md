@@ -1,0 +1,2 @@
+**Justificativa:**
+Esse framework é o escolhido porque lida diretamente com um cenário de refatoração e migração de estado. Isolar o Before e o After ajuda o modelo a contrastar o código legado com os novos requisitos de segurança e infraestrutura, enquanto a Bridge força a IA a focar exatamente nas ações de transição necessárias para transformar o manifest antigo no padrão atual de produção.

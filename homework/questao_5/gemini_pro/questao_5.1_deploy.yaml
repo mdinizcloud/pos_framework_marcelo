@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chronos-api
+  namespace: production
+  labels:
+    app.kubernetes.io/name: chronos-api
+    app.kubernetes.io/instance: chronos-api-prod
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: chronos-platform
+    app.kubernetes.io/managed-by: gitops
+spec:
+  # 1. ALTA DISPONIBILIDADE: Mínimo de 3 réplicas para garantir resiliência e tolerância a falhas na zona
+  replicas: 3
+  
+  # Estratégia de atualização progressiva (Zero Downtime)
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%          # Cria novos pods gradualmente antes de remover os antigos
+      maxUnavailable: 0%     # Garante que 100% da capacidade atual permaneça online durante o deploy
+      
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chronos-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: chronos-api
+    spec:
+      # 7. CONTEXTO DE SEGURANÇA (NÍVEL DO POD): Restrições de execução globais
+      securityContext:
+        runAsNonRoot: true           # Bloqueia estritamente a execução se o contentor tentar rodar como root
+        runAsUser: 10001             # Executa o processo com um UID ID de utilizador não-privilegiado definido
+        runAsGroup: 10001            # Define o GID do grupo correspondente
+        fsGroup: 10001               # Aplica permissões de volume para o grupo ID definido
+        seccompProfile:
+          type: RuntimeDefault       # Ativa o perfil seccomp padrão do runtime para mitigar chamadas de sistema maliciosas
+          
+      containers:
+      - name: api
+        # 2. IMAGEM VERSIONADA: Substituição da tag mutável 'latest' por uma tag imutável e auditável
+        image: chronos-api:v1.4.12
+        imagePullPolicy: IfNotPresent
+        
+        ports:
+        - name: http
+          containerPort: 8080
+          
+        # 7. CONTEXTO DE SEGURANÇA (NÍVEL DO CONTENTOR): Privilégios mínimos operacionais
+        securityContext:
+          allowPrivilegeEscalation: false # Impede que processos filhos ganhem mais privilégios que o pai
+          readOnlyRootFilesystem: true    # Torna o sistema de ficheiros raiz imutável contra injeção de malware
+          capabilities:
+            drop:
+            - ALL                         # Remove todas as permissões Linux padrão não necessárias para a API
+            
+        # 3. SEPARAÇÃO DE SECRETS: Referência segura injetada via variáveis de ambiente vindas do Secret
+        env:
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: chronos-api-secrets
+              key: DB_PASSWORD
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: chronos-api-secrets
+              key: JWT_SECRET
+              
+        # 5. GERENCIAMENTO DE RECURSOS: Dimensionamento previsível e proteção do nó de computação
+        resources:
+          requests:
+            cpu: "250m"              # Reserva 0.25 de um núcleo de CPU para garantir performance mínima
+            memory: "256Mi"          # Garante 256 Megabytes de memória RAM alocados à nascença
+          limits:
+            cpu: "1000m"             # Teto máximo de 1 núcleo para evitar "Noisy Neighbors" (starvation)
+            memory: "512Mi"          # Limite rígido de RAM para proteção contra fugas de memória (OOMKilled controlado)
+            
+        # Ciclo de vida para graceful shutdown
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"] # Aguarda a drenagem completa das conexões no Ingress/Proxy
+              
+        # 6. HEALTH PROBES: Monitorização ativa e contínua do estado da aplicação
+        livenessProbe:
+          # Deteta se a aplicação travou (deadlock). Se falhar, o Kubernetes reinicia o contentor.
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 15     # Tempo de espera para inicialização da JVM/Runtime interno
+          periodSeconds: 10           # Frequência de verificação
+          timeoutSeconds: 2           # Limite de tempo para resposta
+          failureThreshold: 3         # Quantidade de falhas consecutivas antes de reiniciar
+          
+        readinessProbe:
+          # Deteta se a aplicação está pronta para receber tráfego de utilizadores (ex: conexões de BD prontas)
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 10     # Começa a verificar ligeiramente antes da liveness
+          periodSeconds: 5            # Verificação mais frequente para responder rápido à escala
+          timeoutSeconds: 2
+          successThreshold: 1         # Quantos sucessos para voltar a direcionar tráfego
+          failureThreshold: 3         # Remove do Service Endpoint imediatamente se falhar 3 vezes
+          
+        # Volume temporário necessário devido à imposição de 'readOnlyRootFilesystem: true'
+        volumeMounts:
+        - name: ephemeral-tmp
+          mountPath: /tmp
+          
+      volumes:
+      - name: ephemeral-tmp
+        emptyDir: {}                  # Cria uma diretoria temporária em memória/disco do nó para logs ou cache local

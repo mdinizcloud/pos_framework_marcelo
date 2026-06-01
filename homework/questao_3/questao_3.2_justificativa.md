@@ -1,0 +1,2 @@
+**Justificativa:** 
+Esse framework é perfeito aqui porque separa o objetivo final de negócio da mecânica exata da análise técnica. Em problemas de otimização de infraestrutura, isolar a meta (Goal) e os dados brutos (Action) garante que o LLM não apenas cuspa números, mas priorize as recomendações da Task pensando estrategicamente na meta dos 15% e no impacto do SLA.

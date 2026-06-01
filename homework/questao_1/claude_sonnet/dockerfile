@@ -1,0 +1,80 @@
+# ==========================================
+# ESTÁGIO 1: Build (Construção das dependências)
+# ==========================================
+# Usamos uma imagem base slim oficial do Python para compilar o que for necessário.
+# Fixamos a versão "minor" (ex: 3.11) para garantir consistência e evitar quebras surpresa.
+FROM python:3.11-slim AS builder
+
+# Define variáveis de ambiente para otimizar o comportamento do Python e do Pip no build
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Define o diretório de trabalho temporário para o build
+WORKDIR /build
+
+# Instala dependências do sistema operacional necessárias para compilar pacotes (se houver necessidade)
+# O rm -rf garante que a lista de pacotes do apt não ocupe espaço desnecessário na camada
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copia APENAS o arquivo de requisitos primeiro. Isso isola o cache de camadas do Docker.
+# Se o requirements.txt não mudar, o Docker pula o 'pip install' nos próximos builds.
+COPY requirements.txt .
+
+# Cria um "wheels directory" para buildar as dependências em formato binário isolado
+RUN pip install --upgrade pip && \
+    pip wheel --no-cache-dir --no-deps --wheel-dir /build/wheels -r requirements.txt
+
+
+# ==========================================
+# ESTÁGIO 2: Final (Imagem de Produção)
+# ==========================================
+# Iniciamos uma nova imagem limpa, sem compiladores ou ferramentas de build inúteis em produção.
+FROM python:3.11-slim AS runner
+
+# Reaplica as boas práticas de variáveis do Python para execução
+# PYTHONUNBUFFERED=1 garante que os logs da API saiam em tempo real no console (essencial para APMs e Kibana/Grafana)
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PORT=8080
+
+# Define o diretório onde a aplicação vai rodar dentro do container
+WORKDIR /app
+
+# Cria um usuário e um grupo de sistema não-privilegiados para rodar a aplicação.
+# Segurança fundamental: NUNCA rode sua aplicação como root em produção para mitigar Container Breakout.
+RUN groupadd -g 10001 liftgroup && \
+    useradd -u 10001 -g liftgroup -m -s /sbin/nologin liftuser
+
+# Copia os pacotes pré-compilados do estágio de build e faz a instalação local rápida
+COPY --from=builder /build/wheels /wheels
+COPY --from=builder /build/requirements.txt .
+RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt && \
+    rm -rf /wheels
+
+# Copia apenas os arquivos necessários para a execução da API.
+# Note que a pasta tests/ NÃO é copiada para a imagem de produção, poupando espaço e overhead.
+COPY app.py .
+COPY lib/ ./lib
+
+# Garante que todos os arquivos copiados pertençam ao usuário não-root criado
+RUN chown -R liftuser:liftgroup /app
+
+# Define explicitamente as variáveis de ambiente obrigatórias exigidas pela aplicação.
+# Deixamos sem valor padrão (ou vazias) para que o Kubernetes/Docker-Compose seja forçado a injetá-las.
+ENV DATABASE_URL="" \
+    API_KEY=""
+
+# Expõe a porta documentalmente (boa prática para ferramentas de Service Mesh e ingress)
+EXPOSE 8080
+
+# Altera o contexto de execução para o usuário seguro (não-root)
+USER liftuser
+
+# Utiliza a forma Exec (vetor JSON) para o CMD. 
+# Isso faz com que o Gunicorn rode como PID 1, permitindo que ele receba corretamente sinais do SO (como SIGTERM para Graceful Shutdown).
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "4", "app:app"]

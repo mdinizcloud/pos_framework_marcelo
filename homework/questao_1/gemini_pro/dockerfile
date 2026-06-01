@@ -1,0 +1,63 @@
+# 1. IMAGEM BASE MINIMALISTA
+# Usamos a tag 'slim' da imagem oficial do Python. Ela contém apenas os pacotes 
+# essenciais do Debian para rodar o Python, reduzindo drasticamente o tamanho da 
+# imagem e a superfície de ataque a vulnerabilidades (CVEs).
+FROM python:3.11-slim
+
+# 2. OTIMIZAÇÃO DO AMBIENTE PYTHON
+# PYTHONDONTWRITEBYTECODE=1: Impede que o Python grave arquivos .pyc no disco, o que é inútil no container.
+# PYTHONUNBUFFERED=1: Força o Python a enviar os logs de stdout e stderr diretamente para o terminal.
+# Isso é vital em orquestradores modernos, pois garante que ferramentas de monitoramento capturem os logs em tempo real.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# 3. SEGURANÇA: USUÁRIO NÃO-ROOT
+# Rodar aplicações como 'root' dentro do container é uma falha de segurança grave.
+# Criamos um grupo e um usuário de sistema específicos para a nossa aplicação.
+RUN addgroup --system liftgroup && adduser --system --group liftuser
+
+# 4. DIRETÓRIO DE TRABALHO
+# Define o diretório padronizado para as instruções subsequentes, mantendo a estrutura limpa.
+WORKDIR /app
+
+# 5. CACHE DE CAMADAS DO DOCKER (DEPENDÊNCIAS)
+# Copiamos APENAS o requirements.txt antes do código fonte.
+# Como as dependências mudam com menos frequência que o código, o Docker fará o cache
+# desta camada. Se você alterar apenas o app.py, o Docker pula o 'pip install', acelerando o build.
+COPY requirements.txt .
+
+# 6. INSTALAÇÃO OTIMIZADA
+# Instalamos as bibliotecas usando a flag --no-cache-dir para que o pip não salve 
+# arquivos temporários de instalação na imagem, mantendo o tamanho final mais enxuto.
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 7. CÓPIA DO CÓDIGO FONTE (SELECTIVA)
+# Copiamos apenas os arquivos estritamente necessários para rodar a aplicação.
+# Ignoramos a pasta tests/ intencionalmente para não levar código de teste para o ambiente de produção.
+COPY app.py .
+COPY lib/ ./lib/
+
+# 8. PERMISSÕES DE ACESSO
+# Garantimos que o usuário não-root criado tenha a propriedade sobre os arquivos da aplicação.
+RUN chown -R liftuser:liftgroup /app
+
+# 9. CONTEXTO DE EXECUÇÃO
+# A partir desta linha, o container deixa de ser root e passa a operar com privilégios restritos.
+USER liftuser
+
+# 10. DECLARAÇÃO DE VARIÁVEIS DE AMBIENTE
+# Deixamos as variáveis declaradas e vazias (ou com defaults não-sensíveis) como documentação explícita.
+# Os valores reais devem ser injetados em tempo de execução via plataforma/orquestrador (ex: Secrets).
+ENV DATABASE_URL=""
+ENV API_KEY=""
+
+# 11. EXPOSIÇÃO DE PORTA
+# Expose atua como documentação para quem for rodar a imagem, indicando qual porta a API escuta.
+EXPOSE 8080
+
+# 12. COMANDO DE INICIALIZAÇÃO E GRACEFUL SHUTDOWN
+# Utilizamos o formato de array JSON (exec form) em vez do shell form. 
+# Isso garante que o Gunicorn seja o processo PID 1 do container, permitindo que ele 
+# receba os sinais corretos do sistema operacional (como o SIGTERM) para desligar 
+# os workers graciosamente antes de o container ser destruído.
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "4", "app:app"]
