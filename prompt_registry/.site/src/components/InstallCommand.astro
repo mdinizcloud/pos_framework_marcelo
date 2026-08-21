@@ -1,0 +1,62 @@
+---
+interface Props {
+  command: string;
+  label?: string;
+  display?: string;
+}
+const { command, label = 'Instalar', display } = Astro.props;
+const shown = display ?? command;
+---
+<div class="flex items-center gap-2">
+  <code
+    class="flex-1 overflow-x-auto whitespace-nowrap rounded-md bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 dark:bg-surface-2"
+    >{shown}</code
+  >
+  <button
+    type="button"
+    class="install-copy shrink-0 rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-surface-border dark:text-zinc-200 dark:hover:bg-surface-2"
+    data-command={command}
+    aria-label={label}
+  >
+    Copiar
+  </button>
+</div>
+
+<script>
+  async function copyText(text: string): Promise<boolean> {
+    // Clipboard API só funciona em contexto seguro (https ou localhost) — em
+    // http://hostname-local (ex.: cybertron.local) fica indisponível/bloqueada.
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {
+        // cai no fallback abaixo
+      }
+    }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch {
+      ok = false;
+    }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('.install-copy').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const ok = await copyText(btn.dataset.command ?? '');
+      const original = btn.textContent;
+      btn.textContent = ok ? 'Copiado!' : 'Falhou';
+      setTimeout(() => (btn.textContent = original), 1500);
+    });
+  });
+</script>

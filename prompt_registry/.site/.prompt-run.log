@@ -1,0 +1,17 @@
+
+> prompt-registry-site@0.1.0 dev
+> astro dev --port 8020
+
+18:06:12 [types] Generated 0ms
+18:06:12 [content] Syncing content
+18:06:13 [content] Synced content
+
+ astro  v5.18.2 ready in 1982 ms
+
+┃ Local    http://localhost:8020/
+┃ Network  http://192.168.1.96:8020/
+           http://192.168.1.108:8020/
+           http://172.17.0.1:8020/
+
+18:06:13 watching for file changes...
+18:06:16 [200] / 125ms

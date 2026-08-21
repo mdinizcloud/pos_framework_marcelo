@@ -1,0 +1,134 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import InstallCommand from '../../components/InstallCommand.astro';
+import DocDetails from '../../components/DocDetails.astro';
+import CategoryTree from '../../components/CategoryTree.astro';
+import { buildCategoryTree, findAncestorNodes } from '../../lib/tree';
+
+export async function getStaticPaths() {
+  const prompts = await getCollection('prompts');
+  return prompts.map((prompt) => ({ params: { slug: prompt.id }, props: { prompt, allPrompts: prompts } }));
+}
+
+const { prompt, allPrompts } = Astro.props;
+const filePath = `${prompt.data.relPath}.md`;
+
+// Cada segmento do breadcrumb abre um menu pequeno com as pastas/itens logo
+// abaixo dele (não os irmãos) — ex.: clicar em "plugin" mostra o que tem
+// dentro de plugin, clicar em "cairo_dock" mostra o que tem dentro dele.
+const tree = buildCategoryTree(allPrompts);
+const ancestors = findAncestorNodes(tree, prompt.data.category);
+
+const { Content } = await render(prompt);
+---
+<Base title={prompt.data.name} description={prompt.data.descricao}>
+  <div data-pagefind-body>
+    <nav class="mb-4 flex flex-wrap items-center text-sm text-zinc-500" data-breadcrumb>
+      <a href="/" class="hover:text-brand-600 dark:hover:text-brand-300">Prompts</a>
+      <span data-pagefind-meta="category" class="hidden">{prompt.data.category.join(' / ')}</span>
+      {ancestors.map((node) => (
+        <>
+          <span class="mx-1">/</span>
+          <details class="group/crumb relative inline-block">
+            <summary class="cursor-pointer list-none rounded px-1 font-mono hover:bg-zinc-100 hover:text-brand-600 dark:hover:bg-surface-2 dark:hover:text-brand-300 [&::-webkit-details-marker]:hidden">
+              {node.name}
+            </summary>
+            {(node.children.length > 0 || node.items.length > 0) && (
+              <div class="absolute left-0 top-full z-20 mt-1 max-h-80 w-56 overflow-y-auto rounded-md border border-zinc-200 bg-white p-2 shadow-lg dark:border-surface-border dark:bg-surface-1">
+                {node.children.length > 0 && <CategoryTree nodes={node.children} depth={0} autoOpen={false} />}
+                {node.items.length > 0 && (
+                  <ul class="space-y-0.5">
+                    {node.items.map((p) => (
+                      <li>
+                        <a
+                          href={`/prompts/${p.id}`}
+                          class="flex items-center gap-1.5 truncate rounded-md px-2 py-1 font-mono text-sm text-zinc-500 transition hover:bg-zinc-100 hover:text-brand-600 dark:text-zinc-400 dark:hover:bg-surface-2 dark:hover:text-brand-300"
+                        >
+                          <span class="truncate">{p.name}</span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </details>
+        </>
+      ))}
+    </nav>
+
+    <header class="mb-6">
+      {prompt.data.tags.length > 0 && (
+        <div class="mb-3 flex flex-wrap items-center gap-2">
+          {prompt.data.tags.map((tag) => (
+            <span class="inline-flex items-center rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+      <h1 class="font-mono text-2xl font-bold tracking-tight sm:text-3xl" data-pagefind-meta="title">
+        {prompt.data.name}
+      </h1>
+      {prompt.data.descricao && <p class="mt-2 max-w-2xl text-zinc-600 dark:text-zinc-400">{prompt.data.descricao}</p>}
+    </header>
+
+    <div class="mb-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-surface-border dark:bg-surface-1">
+      <p class="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">Caminho do arquivo: <code class="font-mono text-xs text-zinc-500 dark:text-zinc-500">{filePath}</code></p>
+      <InstallCommand command={prompt.data.raw} display={`${prompt.data.filename} (conteúdo completo)`} label="Copiar prompt" />
+    </div>
+
+    {prompt.data.inputs.length > 0 && (
+      <div class="mb-8 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-surface-border dark:bg-surface-1">
+        <p class="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">Variáveis de input:</p>
+        <ul class="space-y-1 text-sm">
+          {prompt.data.inputs.map((input) => (
+            <li>
+              <code class="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs dark:bg-surface-2">{`{{${input.nome}}}`}</code>
+              {input.descricao && <span class="ml-2 text-zinc-600 dark:text-zinc-400">— {input.descricao}</span>}
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
+
+    <DocDetails id="prompt-md" filename={prompt.data.filename} open>
+      <article class="prose"><Content /></article>
+    </DocDetails>
+
+    {prompt.data.hasReadme && (
+      <DocDetails id="readme" filename="README.md">
+        <article class="prose" set:html={prompt.data.readmeHtml} />
+      </DocDetails>
+    )}
+  </div>
+
+  {/* Abre o README automaticamente só quando a página é acessada via #readme (ex.: link do card). */}
+  <script is:inline>
+    if (location.hash === '#readme') {
+      const el = document.getElementById('readme');
+      if (el && 'open' in el) {
+        el.open = true;
+        el.scrollIntoView({ block: 'start' });
+      }
+    }
+  </script>
+
+  {/* Breadcrumb: só um menu de navegação aberto por vez, e fecha ao clicar fora. */}
+  <script is:inline>
+    (function () {
+      const nav = document.querySelector('[data-breadcrumb]');
+      if (!nav) return;
+      const crumbs = Array.from(nav.querySelectorAll('details.group\\/crumb'));
+      crumbs.forEach((d) => {
+        d.addEventListener('toggle', () => {
+          if (d.open) crumbs.forEach((other) => other !== d && (other.open = false));
+        });
+      });
+      document.addEventListener('click', (e) => {
+        if (!nav.contains(e.target)) crumbs.forEach((d) => (d.open = false));
+      });
+    })();
+  </script>
+</Base>

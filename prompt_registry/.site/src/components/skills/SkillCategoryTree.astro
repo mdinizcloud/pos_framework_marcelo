@@ -1,0 +1,56 @@
+---
+import type { SkillCategoryTreeNode } from '../../lib/skillTree';
+import SkillCategoryTree from './SkillCategoryTree.astro';
+
+interface Props {
+  nodes: SkillCategoryTreeNode[];
+  depth?: number;
+  autoOpen?: boolean;
+}
+const { nodes, depth = 0, autoOpen = true } = Astro.props;
+---
+<ul class:list={['space-y-0.5', depth > 0 && 'ml-3 border-l border-zinc-200 pl-2 dark:border-surface-border']}>
+  {nodes.map((node) => (
+    <li>
+      <details class="group/folder" open={depth === 0 && autoOpen}>
+        <summary
+          class:list={[
+            'flex cursor-pointer list-none items-center gap-1.5 rounded-md px-2 py-1 text-sm transition hover:bg-zinc-100 dark:hover:bg-surface-2',
+            depth === 0
+              ? 'font-semibold text-zinc-800 dark:text-zinc-100'
+              : 'font-medium text-zinc-600 dark:text-zinc-400',
+          ]}
+        >
+          <svg
+            class="h-3 w-3 shrink-0 text-zinc-400 transition-transform group-open/folder:rotate-90 dark:text-brand-400"
+            viewBox="0 0 8 8"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path d="M1 0l6 4-6 4V0z" />
+          </svg>
+          <span class="truncate font-mono">{node.name}</span>
+        </summary>
+
+        <div class="mt-0.5">
+          {node.children.length > 0 && <SkillCategoryTree nodes={node.children} depth={depth + 1} autoOpen={autoOpen} />}
+          {node.skills.length > 0 && (
+            <ul class:list={['space-y-0.5', depth >= 0 && 'ml-3 border-l border-zinc-200 pl-2 dark:border-surface-border']}>
+              {node.skills.map((s) => (
+                <li>
+                  <a
+                    href={`/skills/${s.id}`}
+                    class="flex items-center gap-1.5 truncate rounded-md px-2 py-1 font-mono text-sm text-zinc-500 transition hover:bg-zinc-100 hover:text-brand-600 dark:text-zinc-400 dark:hover:bg-surface-2 dark:hover:text-brand-300"
+                  >
+                    <span class="truncate">{s.name}</span>
+                    {!s.hasDoc && <span class="shrink-0 text-xs text-amber-500" title="sem documentação">●</span>}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </details>
+    </li>
+  ))}
+</ul>
