@@ -1,0 +1,181 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import SkillCard from '../../components/SkillCard.astro';
+import InstallCommand from '../../components/InstallCommand.astro';
+import DocDetails from '../../components/DocDetails.astro';
+import { site } from '../../site.config';
+
+export async function getStaticPaths() {
+  const plugins = await getCollection('plugins');
+  const skills = await getCollection('skills');
+  return plugins.map((plugin) => ({
+    params: { slug: plugin.id },
+    props: {
+      plugin,
+      skills: skills
+        .filter((s) => s.data.plugin.id === plugin.id)
+        .sort((a, b) => a.data.name.localeCompare(b.data.name)),
+    },
+  }));
+}
+
+const { plugin, skills } = Astro.props;
+---
+<Base title={plugin.data.name} description={plugin.data.description}>
+  <nav class="mb-4 text-sm text-zinc-500">
+    <a href="/" class="hover:text-brand-600 dark:hover:text-brand-300">Skills</a>
+    <span class="mx-1">/</span>
+    <span>plugins</span>
+  </nav>
+
+  <header class="mb-6">
+    <div class="flex items-baseline gap-3">
+      <h1 class="font-mono text-2xl font-bold tracking-tight sm:text-3xl">{plugin.data.name}</h1>
+      {plugin.data.version && (
+        <span class="text-sm text-zinc-500">v{plugin.data.version}</span>
+      )}
+    </div>
+    <p class="mt-2 max-w-2xl text-zinc-600 dark:text-zinc-400">{plugin.data.description}</p>
+  </header>
+
+  {plugin.data.hasClaudePlugin && (
+    <div class="mb-8 rounded-lg border border-brand-400/20 bg-zinc-50 p-4 dark:border-brand-400/15 dark:bg-surface-1">
+      <p class="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        Carregar o Plugin completo no <strong>Claude Code</strong> (recomendado para dev — zero cópia/cache):
+      </p>
+      <InstallCommand command={`claude --plugin-dir "${plugin.data.localPath}"`} />
+
+      <div class="mt-6">
+        <DocDetails id="symlink-skills" filename={`Ou symlink de cada skill individual em .claude/skills/ (${skills.length})`}>
+          <div class="space-y-3">
+            {skills.map((s) => (
+              <div>
+                <p class="mb-1 font-mono text-xs text-zinc-500 dark:text-zinc-500">{s.data.name}</p>
+                <InstallCommand
+                  command={`ln -s ${site.repo.localPath}/${[...s.data.category, s.id].join('/')} .claude/skills/${s.id}`}
+                />
+              </div>
+            ))}
+            
+          </div>
+        </DocDetails>
+
+        <div class="mt-4">
+          <DocDetails id="symlink-skills-all-claude" filename={`Ou rodar todos os symlinks individuais de uma vez`}>
+            <InstallCommand
+              command={skills.map((s) => `ln -s ${site.repo.localPath}/${[...s.data.category, s.id].join('/')} .claude/skills/${s.id}`).join(' && \\\n')}
+            />
+          </DocDetails>
+        </div>
+      </div>
+    </div>
+  )}
+
+  {plugin.data.hasClaudePlugin && (
+    <div class="mb-8 rounded-lg border border-brand-400/40 bg-zinc-50 p-4 dark:border-brand-400/30 dark:bg-surface-1">
+      <p class="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        Symlink do Plugin completo no <strong>Antigravity (agy)</strong> em <code>.agents/plugins/</code> (recomendado):
+      </p>
+      <InstallCommand
+        command={`ln -s ${plugin.data.localPath} .agents/plugins/${plugin.id}`}
+      />
+      
+      <DocDetails id="symlink-skills-agy" filename={`Ou symlink de cada skill individual em .agents/skills/ (${skills.length})`}>
+        <div class="space-y-3">
+          {skills.map((s) => (
+            <div>
+              <p class="mb-1 font-mono text-xs text-zinc-500 dark:text-zinc-500">{s.data.name}</p>
+              <InstallCommand
+                command={`ln -s ${site.repo.localPath}/${[...s.data.category, s.id].join('/')} .agents/skills/${s.id}`}
+              />
+            </div>
+          ))}
+          
+        </div>
+      </DocDetails>
+
+      <div class="mt-4">
+        <DocDetails id="symlink-skills-all-agy" filename={`Ou rodar todos os symlinks individuais de uma vez`}>
+          <InstallCommand
+            command={skills.map((s) => `ln -s ${site.repo.localPath}/${[...s.data.category, s.id].join('/')} .agents/skills/${s.id}`).join(' && \\\n')}
+          />
+        </DocDetails>
+      </div>
+    </div>
+  )}
+
+  <div class="mb-8 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-surface-border dark:bg-surface-1">
+    <p class="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">Instalar este plugin:</p>
+    <InstallCommand command={plugin.data.installCommand} />
+
+    {plugin.data.hasClaudePlugin && (
+      <>
+        <p class="mb-2 mt-4 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          Ou direto do repositório (checkout local, instalação persistente no projeto atual):
+        </p>
+        <InstallCommand
+          command={`claude plugin marketplace add ${plugin.data.localPath} && claude plugin install ${plugin.data.claudePluginRef} --scope project`}
+        />
+      </>
+    )}
+  </div>
+
+  {plugin.data.hasClaudePlugin && (
+    <div class="mb-8 rounded-lg border border-brand-400/60 bg-zinc-50 p-4 dark:border-brand-400/50 dark:bg-surface-1">
+      <p class="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        Symlink do Plugin completo no <strong>Opencode</strong> em <code>.opencode/plugins/</code>:
+      </p>
+      <InstallCommand
+        command={`ln -s ${plugin.data.localPath} .opencode/plugins/${plugin.id}`}
+      />
+      
+      <DocDetails id="symlink-skills-opencode" filename={`Ou symlink de cada skill individual em .opencode/skills/ (${skills.length})`}>
+        <div class="space-y-3">
+          {skills.map((s) => (
+            <div>
+              <p class="mb-1 font-mono text-xs text-zinc-500 dark:text-zinc-500">{s.data.name}</p>
+              <InstallCommand
+                command={`ln -s ${site.repo.localPath}/${[...s.data.category, s.id].join('/')} .opencode/skills/${s.id}`}
+              />
+            </div>
+          ))}
+          
+        </div>
+      </DocDetails>
+
+      <div class="mt-4">
+        <DocDetails id="symlink-skills-all-opencode" filename={`Ou rodar todos os symlinks individuais de uma vez`}>
+          <InstallCommand
+            command={skills.map((s) => `ln -s ${site.repo.localPath}/${[...s.data.category, s.id].join('/')} .opencode/skills/${s.id}`).join(' && \\\n')}
+          />
+        </DocDetails>
+      </div>
+    </div>
+  )}
+
+  {plugin.data.hasReadme && (
+    <DocDetails id="readme" filename="README.md" open>
+      <article class="prose" set:html={plugin.data.readmeHtml} />
+    </DocDetails>
+  )}
+
+  <DocDetails id="skills" filename={`Skills (${skills.length})`} open>
+    <div id="skill-grid" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {skills.map((s) => (
+        <SkillCard id={s.id} name={s.data.name} category={s.data.category} blurb={s.data.blurb} hasDoc={s.data.hasDoc} hasReadme={s.data.hasReadme} />
+      ))}
+    </div>
+  </DocDetails>
+
+  {plugin.data.extraDocs.length > 0 && (
+    <div class="mt-8">
+      <h2 class="mb-4 text-lg font-semibold">Documentação adicional</h2>
+      {plugin.data.extraDocs.map((doc) => (
+        <DocDetails id={`doc-${doc.filename.replace(/[/.]/g, '-')}`} filename={doc.filename}>
+          <article class="prose" set:html={doc.html} />
+        </DocDetails>
+      ))}
+    </div>
+  )}
+</Base>

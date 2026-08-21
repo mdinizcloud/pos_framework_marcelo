@@ -1,0 +1,93 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import PluginBadge from '../../components/PluginBadge.astro';
+import InstallCommand from '../../components/InstallCommand.astro';
+import DocDetails from '../../components/DocDetails.astro';
+import Breadcrumb from '../../components/Breadcrumb.astro';
+import { buildCategoryTree } from '../../lib/tree';
+import { site } from '../../site.config';
+
+export async function getStaticPaths() {
+  const skills = await getCollection('skills');
+  const tree = buildCategoryTree(skills);
+  return skills.map((skill) => ({ params: { slug: skill.id }, props: { skill, tree } }));
+}
+
+const { skill, tree } = Astro.props;
+const categoryPath = skill.data.category.length > 0 ? skill.data.category.join(' / ') : 'raiz';
+
+// Instala só esta skill. --full-depth porque as skills ficam aninhadas em subpastas de categoria.
+const installCommand = `npx skills add ${site.repo.slug}@${skill.data.name} --full-depth`;
+
+// Instalação local por symlink (padrão deste registro — nunca cópia, ver .claude/skills/*).
+const sourceRel = [...skill.data.category, skill.id].join('/');
+const symlinkCommand = `ln -s "/github/skills_registry/${sourceRel}" .claude/skills`;
+
+let Content: Awaited<ReturnType<typeof render>>['Content'] | null = null;
+if (skill.data.hasDoc) {
+  Content = (await render(skill)).Content;
+}
+---
+<Base title={skill.data.name} description={skill.data.blurb || skill.data.description}>
+  <div data-pagefind-body>
+    <Breadcrumb tree={tree} category={skill.data.category} currentSkillId={skill.id} />
+    <span data-pagefind-meta="category" class="sr-only">{categoryPath}</span>
+
+    <header class="mb-6">
+      <div class="mb-3 flex flex-wrap items-center gap-2">
+        <PluginBadge plugin={skill.data.plugin.id} href={`/plugins/${skill.data.plugin.id}`} />
+        {!skill.data.hasDoc && (
+          <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
+            sem documentação
+          </span>
+        )}
+      </div>
+      <h1 class="font-mono text-2xl font-bold tracking-tight sm:text-3xl" data-pagefind-meta="title">
+        {skill.data.name}
+      </h1>
+    </header>
+
+    <div class="mb-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-surface-border dark:bg-surface-1">
+      <p class="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">Instalar esta skill:</p>
+      <InstallCommand command={installCommand} />
+    </div>
+
+    <div class="mb-8 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-surface-border dark:bg-surface-1">
+      <p class="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        Ou instalar por symlink (local, rodando a partir da raiz deste repositório):
+      </p>
+      <InstallCommand command={symlinkCommand} label="Copiar comando de symlink" />
+    </div>
+
+    {skill.data.hasDoc && Content ? (
+      <DocDetails id="skill-md" filename="SKILL.md" open>
+        <article class="prose"><Content /></article>
+      </DocDetails>
+    ) : (
+      <div class="rounded-lg border border-dashed border-amber-300 bg-amber-50 p-6 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/5 dark:text-amber-300">
+        <p class="font-medium">Documentação ainda não disponível.</p>
+        <p class="mt-1 text-sm">
+          O mantenedor deve adicionar um corpo descritivo ao <code class="font-mono">SKILL.md</code> desta skill.
+        </p>
+      </div>
+    )}
+
+    {skill.data.hasReadme && (
+      <DocDetails id="readme" filename="README.md">
+        <article class="prose" set:html={skill.data.readmeHtml} />
+      </DocDetails>
+    )}
+  </div>
+
+  {/* Abre o README automaticamente só quando a página é acessada via #readme (ex.: badge do card). */}
+  <script is:inline>
+    if (location.hash === '#readme') {
+      const el = document.getElementById('readme');
+      if (el && 'open' in el) {
+        el.open = true;
+        el.scrollIntoView({ block: 'start' });
+      }
+    }
+  </script>
+</Base>

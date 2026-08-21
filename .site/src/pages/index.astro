@@ -1,0 +1,86 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import SkillCard from '../components/SkillCard.astro';
+import CategoryTree from '../components/CategoryTree.astro';
+import { buildCategoryTree } from '../lib/tree';
+import { site } from '../site.config';
+
+const skills = (await getCollection('skills')).sort((a, b) => a.data.name.localeCompare(b.data.name));
+const plugins = await getCollection('plugins');
+const pluginPathToId = new Map(
+  plugins.filter((p) => p.data.compound).map((p) => [p.data.sourcePath, p.id]),
+);
+
+const tree = buildCategoryTree(skills, pluginPathToId);
+const pending = skills.filter((s) => !s.data.hasDoc).length;
+---
+<Base>
+  <section class="mb-6">
+    <div class="flex flex-wrap items-center gap-3">
+      <img src={site.logo} alt="" class="h-10 w-10 shrink-0 rounded-lg" />
+      <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{site.name}</h1>
+
+      <div class="relative ml-auto w-full sm:w-[32rem]">
+        <svg viewBox="0 0 16 16" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="5.5"/><path d="M11.5 11.5L14.5 14.5" stroke-linecap="round"/></svg>
+        <input
+          id="search-input"
+          type="text"
+          placeholder="Buscar skills..."
+          class="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm text-zinc-800 placeholder:text-zinc-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400 dark:border-surface-border dark:bg-surface-1 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+        />
+      </div>
+    </div>
+    <p class="mt-1 text-zinc-600 dark:text-zinc-400">{site.tagline}</p>
+    <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-500">
+      {tree.length} categorias · {skills.length} skills{pending > 0 && ` · ${pending} sem documentação`}
+    </p>
+  </section>
+
+  <div class="flex flex-col gap-8 md:flex-row">
+    <aside class="md:w-64 md:shrink-0">
+      <div class="md:sticky md:top-16 md:max-h-[calc(100vh-5rem)] md:overflow-y-auto md:overscroll-contain">
+        <div class="mb-2 flex items-center justify-between px-2">
+          <p class="text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Pastas</p>
+          <div class="flex items-center gap-0.5">
+            <button type="button" id="tree-collapse-all" title="Recolher tudo" aria-label="Recolher tudo" class="rounded p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-surface-2 dark:hover:text-zinc-200">
+              <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4-4 4 4M4 14l4-4 4 4"/></svg>
+            </button>
+            <button type="button" id="tree-expand-all" title="Expandir tudo" aria-label="Expandir tudo" class="rounded p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-surface-2 dark:hover:text-zinc-200">
+              <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l4 4 4-4M4 12l4 4 4-4"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="tree-root">
+          <CategoryTree nodes={tree} />
+        </div>
+      </div>
+    </aside>
+    <section id="skill-list" class="grid min-w-0 flex-1 grid-cols-1 gap-4 self-start sm:grid-cols-2 xl:grid-cols-3">
+      {skills.map((s) => (
+        <SkillCard id={s.id} name={s.data.name} category={s.data.category} blurb={s.data.blurb} hasDoc={s.data.hasDoc} hasReadme={s.data.hasReadme} />
+      ))}
+    </section>
+  </div>
+</Base>
+
+<script>
+  const input = document.getElementById('search-input') as HTMLInputElement | null;
+  const cards = Array.from(document.querySelectorAll<HTMLElement>('#skill-list > article'));
+
+  input?.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    for (const card of cards) {
+      const haystack = card.textContent?.toLowerCase() ?? '';
+      card.classList.toggle('hidden', q.length > 0 && !haystack.includes(q));
+    }
+  });
+
+  const treeRoot = document.getElementById('tree-root');
+  document.getElementById('tree-collapse-all')?.addEventListener('click', () => {
+    treeRoot?.querySelectorAll('details').forEach((d) => { (d as HTMLDetailsElement).open = false; });
+  });
+  document.getElementById('tree-expand-all')?.addEventListener('click', () => {
+    treeRoot?.querySelectorAll('details').forEach((d) => { (d as HTMLDetailsElement).open = true; });
+  });
+</script>

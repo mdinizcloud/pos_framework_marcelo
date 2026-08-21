@@ -1,0 +1,58 @@
+---
+interface Props {
+  id: string;
+  name: string;
+  category: string[];
+  blurb: string;
+  tags: string[];
+  hasReadme?: boolean;
+}
+const { id, name, category, blurb, tags, hasReadme = false } = Astro.props;
+const eyebrow = category[0] ?? 'prompt';
+const categoryPath = category.length > 0 ? category.join('/') : 'raiz';
+const initial = name.charAt(0).toUpperCase();
+const visibleTags = tags.slice(0, 2);
+const extraTags = tags.length - visibleTags.length;
+---
+<article
+  data-category={category[0] ?? ''}
+  class="group relative flex flex-col rounded-xl border border-zinc-200 bg-white p-5 transition hover:border-brand-300 hover:shadow-sm dark:border-surface-border dark:bg-surface-1 dark:hover:border-brand-500/50"
+>
+  <div class="mb-3 flex items-start gap-3">
+    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#d85ed7]/10 font-mono text-base font-bold text-[#d85ed7] dark:bg-[#d85ed7]/15 dark:text-[#d85ed7]">
+      {initial}
+    </div>
+    <div class="min-w-0 flex-1 pt-0.5">
+      <p class="truncate text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">{eyebrow}</p>
+      <h3 class="truncate font-mono text-base font-semibold tracking-tight">
+        <a
+          href={`/prompts/${id}`}
+          class="after:absolute after:inset-0 group-hover:text-brand-600 dark:group-hover:text-brand-300"
+        >
+          {name}
+        </a>
+      </h3>
+    </div>
+  </div>
+
+  <p class="line-clamp-3 flex-1 text-sm text-zinc-600 dark:text-zinc-400">{blurb}</p>
+
+  <div class="relative z-10 mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-zinc-100 pt-3 text-xs text-zinc-500 dark:border-surface-border dark:text-zinc-500">
+    <span class="inline-flex items-center gap-1" title={categoryPath}>
+      <svg viewBox="0 0 16 16" class="h-3 w-3 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1.5 3.5h4l1.2 1.5h7.3a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-.5.5h-12a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5z"/></svg>
+      <span class="truncate max-w-[9rem]">{categoryPath}</span>
+    </span>
+    {hasReadme && (
+      <a href={`/prompts/${id}#readme`} class="relative z-10 inline-flex items-center gap-1 hover:text-brand-500 dark:hover:text-brand-300">
+        <svg viewBox="0 0 16 16" class="h-3 w-3 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 1.5h5l3 3v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1z"/><path d="M9 1.5V5h3.5"/></svg>
+        README
+      </a>
+    )}
+    {visibleTags.map((tag) => (
+      <span class="inline-flex items-center rounded-full bg-brand-500/10 px-2 py-0.5 text-[11px] font-medium text-brand-600 dark:bg-brand-500/15 dark:text-brand-300">
+        {tag}
+      </span>
+    ))}
+    {extraTags > 0 && <span class="text-zinc-400">+{extraTags}</span>}
+  </div>
+</article>

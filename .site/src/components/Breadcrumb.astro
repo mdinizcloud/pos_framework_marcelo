@@ -1,0 +1,88 @@
+---
+// Breadcrumb de categoria com navegação em cascata: cada segmento é clicável e abre
+// um menu pequeno com as subpastas/skills logo abaixo dele (ex.: clicar em "iac" mostra
+// as skills e subpastas dentro de devops/iac, sem precisar voltar pra árvore lateral).
+import type { CategoryTreeNode } from '../lib/tree';
+import { findCategoryNode } from '../lib/tree';
+import CategoryTree from './CategoryTree.astro';
+
+interface Props {
+  tree: CategoryTreeNode[];
+  category: string[];
+  currentSkillId?: string;
+}
+const { tree, category, currentSkillId } = Astro.props;
+
+const segments = category.map((label, i) => {
+  const path = category.slice(0, i + 1);
+  const node = findCategoryNode(tree, path);
+  return { label, children: node?.children ?? [], skills: node?.skills ?? [] };
+});
+---
+<nav class="mb-4 flex flex-wrap items-center gap-1 text-sm text-zinc-500">
+  <a
+    href="/"
+    class="rounded px-1.5 py-0.5 font-mono hover:bg-zinc-100 hover:text-brand-600 dark:hover:bg-surface-2 dark:hover:text-brand-300"
+  >
+    Skills
+  </a>
+  {segments.map((seg) => (
+    <Fragment>
+      <span class="mx-0.5">/</span>
+      <details data-crumb class="relative inline-block">
+        <summary class="cursor-pointer list-none rounded px-1.5 py-0.5 font-mono hover:bg-zinc-100 hover:text-brand-600 dark:hover:bg-surface-2 dark:hover:text-brand-300 [&::-webkit-details-marker]:hidden">
+          {seg.label}
+        </summary>
+        <div class="absolute left-0 top-full z-30 mt-1 max-h-80 w-64 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-2 normal-case shadow-lg dark:border-surface-border dark:bg-surface-1">
+          {seg.skills.length > 0 && (
+            <ul class="mb-1 space-y-0.5">
+              {seg.skills.map((s) => (
+                <li>
+                  <a
+                    href={`/skills/${s.id}`}
+                    class:list={[
+                      'flex items-center gap-1.5 truncate rounded-md px-2 py-1 font-mono text-sm transition hover:bg-zinc-100 hover:text-brand-600 dark:hover:bg-surface-2 dark:hover:text-brand-300',
+                      s.id === currentSkillId
+                        ? 'font-semibold text-brand-600 dark:text-brand-300'
+                        : 'text-zinc-600 dark:text-zinc-400',
+                    ]}
+                  >
+                    <span class="truncate">{s.name}</span>
+                    {!s.hasDoc && <span class="shrink-0 text-xs text-amber-500" title="sem documentação">●</span>}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+          {seg.children.length > 0 && <CategoryTree nodes={seg.children} depth={1} />}
+          {seg.children.length === 0 && seg.skills.length === 0 && (
+            <p class="px-2 py-1 text-xs text-zinc-400">vazio</p>
+          )}
+        </div>
+      </details>
+    </Fragment>
+  ))}
+</nav>
+
+<script is:inline>
+  // Fecha os outros menus de breadcrumb quando um novo é aberto (details nativo não faz isso sozinho).
+  document.addEventListener(
+    'toggle',
+    function (e) {
+      var t = e.target;
+      if (t && t.hasAttribute && t.hasAttribute('data-crumb') && t.open) {
+        document.querySelectorAll('details[data-crumb][open]').forEach(function (d) {
+          if (d !== t) d.removeAttribute('open');
+        });
+      }
+    },
+    true,
+  );
+
+  // Fecha ao clicar fora de qualquer menu de breadcrumb aberto.
+  document.addEventListener('click', function (e) {
+    document.querySelectorAll('details[data-crumb][open]').forEach(function (d) {
+      if (!d.contains(e.target)) d.removeAttribute('open');
+    });
+  });
+</script>
