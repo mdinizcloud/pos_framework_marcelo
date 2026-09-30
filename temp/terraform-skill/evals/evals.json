@@ -1,0 +1,100 @@
+[
+  {
+    "id": "G1_criar_projeto_terragrunt",
+    "prompt": "cria um projeto terraform novo pra uma app web na AWS, ambiente dev",
+    "expected_output": "Projeto Terraform + Terragrunt: terragrunt.hcl na raiz (backend remoto com bucket derivado por categoria + generate provider), modules/cloud/ com Terraform puro (só required_providers, sem provider block, zero módulo chamando módulo), environments/dev/cloud/<componente>/terragrunt.hcl com dependency entre componentes na ordem cloud/network→cloud/cluster→cloud/workloads, state remoto 1 por componente-folha com key derivada do path e 1 bucket por categoria (<projeto>-tfstate-cloud), provider com ~> da última versão via Registry API + .terraform.lock.hcl commitado, sem código deprecado, README.md e CHANGELOG.md na raiz e no ambiente, docs/ e scripts/bootstrap-state-backend.sh presentes. Só o ambiente dev é criado.",
+    "files": [],
+    "expectations": [
+      { "name": "layout_terragrunt_raiz", "check": "deterministic", "assertion": "existe terragrunt.hcl na raiz com bloco remote_state e generate de provider; a raiz não tem .tf de root module (recurso só em modules/<categoria>/<nome>/)." },
+      { "name": "categoria_espelhada", "check": "deterministic", "assertion": "toda categoria usada (ex: cloud) existe igual dos dois lados: modules/<categoria>/ e environments/dev/<categoria>/ — nunca só de um lado." },
+      { "name": "modules_puros", "check": "deterministic", "assertion": "cada modules/<categoria>/<nome>/versions.tf declara required_providers e nenhum modules/**/*.tf tem provider block." },
+      { "name": "sem_child_module", "check": "deterministic", "assertion": "nenhum .tf dentro de modules/** declara module \"...\" { source = \"./...\" } chamando outro módulo local — árvore flat, 1 nível, sem categoria com main.tf/module{} próprio." },
+      { "name": "componente_terragrunt", "check": "deterministic", "assertion": "environments/dev/cloud/ contém dirs de componente, cada um com terragrunt.hcl apontando source pra ../../../../modules/cloud/<nome>." },
+      { "name": "ordem_dependency", "check": "graded", "assertion": "os terragrunt.hcl declaram dependency na ordem cloud/network→cloud/cluster→cloud/workloads (cluster depende de network, workloads de cluster)." },
+      { "name": "state_split_key", "check": "graded", "assertion": "o state é remoto e dividido por componente-folha, com key derivada do path (<projeto>/environments/dev/cloud/<componente>/terraform.tfstate), sem state central." },
+      { "name": "bucket_por_categoria", "check": "graded", "assertion": "o bucket de state segue <projeto>-tfstate-<categoria> (não 1 bucket único pro projeto, não 1 por componente-folha) — para este caso, <projeto>-tfstate-cloud." },
+      { "name": "provider_pin_constraint", "check": "deterministic", "assertion": "required_providers usa version com operador ~> (nunca pin exato à mão, nunca sem version)." },
+      { "name": "lock_commitado", "check": "graded", "assertion": ".terraform.lock.hcl é tratado como arquivo commitado (não está no .gitignore; o .gitignore ignora *.tfstate e .terraform/ mas não o lock)." },
+      { "name": "sem_legado", "check": "graded", "assertion": "a geração consulta a versão latest via Registry API e não usa resource/argumento deprecado; Context7 é usado só pra sintaxe, com fallback se o MCP estiver indisponível." },
+      { "name": "docs_presentes", "check": "deterministic", "assertion": "existem README.md e CHANGELOG.md na raiz e em environments/dev/, além do diretório docs/." },
+      { "name": "so_ambiente_pedido", "check": "graded", "assertion": "apenas o ambiente dev é criado — nenhum hml/prd pré-criado." },
+      { "name": "provider_recurso_principal_aws", "check": "graded", "assertion": "os módulos usam tipos de resource válidos do provider aws, nenhum resource azurerm_ ou google_." }
+    ]
+  },
+  {
+    "id": "G2_adicionar_ambiente",
+    "prompt": "adiciona o ambiente prd nesse projeto",
+    "expected_output": "Novo diretório environments/prd/ espelhando as categorias e componentes de dev (env.hcl, README.md, CHANGELOG.md e environments/prd/<categoria>/<componente>/terragrunt.hcl para cada um), com state remoto próprio (key environments/prd/<categoria>/<componente>/terraform.tfstate, mesmo bucket por categoria de dev — bucket é por categoria, não por ambiente). Nenhum arquivo de environments/dev/ é tocado. Módulos em modules/ são reutilizados, não duplicados.",
+    "files": [],
+    "expectations": [
+      { "name": "novo_ambiente_dir", "check": "deterministic", "assertion": "é criado environments/prd/ com env.hcl e, pra cada categoria já usada em dev, um dir de componente com terragrunt.hcl no mesmo path <categoria>/<componente>." },
+      { "name": "state_proprio_prd", "check": "graded", "assertion": "o state do prd é isolado, com key environments/prd/<categoria>/<componente>/terraform.tfstate — separado do dev pela key, não por bucket (bucket é por categoria, compartilhado entre ambientes)." },
+      { "name": "nao_toca_dev", "check": "graded", "assertion": "nenhum arquivo dentro de environments/dev/ é modificado ao adicionar o prd." },
+      { "name": "modulos_reutilizados", "check": "graded", "assertion": "os módulos em modules/<categoria>/ são referenciados pelo prd, não copiados/duplicados." }
+    ]
+  },
+  {
+    "id": "G3_adicionar_componente",
+    "prompt": "adiciona um componente de prometheus nesse projeto terraform, categoria observabilidade, só no ambiente dev, ele vai ler métricas do cluster",
+    "expected_output": "Não recria o projeto nem entra em modo auditoria mesmo com estrutura Terraform já existindo. Lê a estrutura real primeiro. Cria modules/observabilidade/prometheus/ (versions/main/variables/outputs.tf, sem provider block, sem module{} chamando outro módulo) e environments/dev/observabilidade/prometheus/terragrunt.hcl com dependency cruzando categoria pra ../../cloud/cluster (não do inverso). Categoria observabilidade é nova nesse projeto → roda bootstrap-state-backend.sh criando o bucket <projeto>-tfstate-observabilidade antes do apply. Nenhum arquivo de componente já existente (cloud/network, cloud/cluster, cloud/workloads) é modificado. Roda check_generated.sh antes de considerar pronto. Só o ambiente dev é tocado, nenhum outro ambiente pré-existente é alterado.",
+    "files": [],
+    "expectations": [
+      { "name": "nao_recria_nem_audita", "check": "graded", "assertion": "o modo aplicado é 'adicionar componente', não 'criar' (não recria terragrunt.hcl raiz nem outros componentes) nem 'auditar' (o código é de fato escrito, não é só relatório)." },
+      { "name": "le_estrutura_antes", "check": "graded", "assertion": "a estrutura real do projeto é lida antes de qualquer criação — não assume categorias/componentes existentes de memória." },
+      { "name": "novo_modulo_puro", "check": "deterministic", "assertion": "modules/observabilidade/prometheus/versions.tf declara required_providers e nenhum arquivo em modules/observabilidade/prometheus/ tem provider block ou module{} chamando outro módulo local." },
+      { "name": "componente_com_dependency_correta", "check": "graded", "assertion": "environments/dev/observabilidade/prometheus/terragrunt.hcl declara dependency cruzando categoria (config_path tipo ../../cloud/cluster), não pra cloud/network diretamente, nem o inverso." },
+      { "name": "categoria_nova_bootstrap", "check": "graded", "assertion": "como observabilidade é categoria nova no projeto, o fluxo chama/menciona scripts/bootstrap-state-backend.sh pra criar o bucket <projeto>-tfstate-observabilidade antes do 1º apply dela." },
+      { "name": "nao_toca_componentes_existentes", "check": "graded", "assertion": "nenhum arquivo dentro de environments/dev/cloud/network/, environments/dev/cloud/cluster/ ou environments/dev/cloud/workloads/ é modificado." },
+      { "name": "so_ambiente_pedido_tocado", "check": "graded", "assertion": "apenas environments/dev/ recebe o novo componente — nenhum outro ambiente pré-existente é alterado." },
+      { "name": "valida_antes_de_terminar", "check": "graded", "assertion": "check_generated.sh (ou equivalente fmt/validate/check_naming) roda antes de declarar a tarefa concluída." }
+    ]
+  },
+  {
+    "id": "A1_auditar_aws",
+    "prompt": "audita esse projeto terraform e gera o relatório",
+    "expected_output": "Relatório de auditoria apontando cada não-conformidade com arquivo:linha e a regra do checklist: provider sem ~>/sem version; provider e region hardcoded fora do terragrunt.hcl; módulo vindo do Registry; recurso solto no root fora de modules/; nome de resource repetindo o tipo; bloco aninhado legado (versioning) em vez de resource dedicado; variable sem description; output sem description; ausência de lock file. Separa o que bloqueia do que é recomendação; não edita o projeto.",
+    "files": ["evals/files/aws-nao-conforme/"],
+    "expectations": [
+      { "name": "aponta_provider_sem_pin", "check": "graded", "assertion": "o relatório aponta required_providers sem ~>/sem version, citando arquivo e linha." },
+      { "name": "aponta_provider_region_hardcoded", "check": "graded", "assertion": "o relatório aponta provider e/ou region hardcoded que deveriam vir do terragrunt.hcl, citando arquivo e linha." },
+      { "name": "aponta_modulo_registry", "check": "graded", "assertion": "o relatório aponta o módulo vindo do Terraform Registry em vez de local, citando arquivo e linha." },
+      { "name": "aponta_recurso_fora_modules", "check": "graded", "assertion": "o relatório aponta resource solto no root em vez de dentro de modules/, citando arquivo e linha." },
+      { "name": "aponta_nome_repete_tipo", "check": "graded", "assertion": "o relatório aponta nome de resource repetindo o tipo, citando arquivo e linha." },
+      { "name": "aponta_bloco_aninhado_legado", "check": "graded", "assertion": "o relatório aponta o bloco aninhado (versioning) que deveria ser resource dedicado, citando arquivo e linha." },
+      { "name": "aponta_variable_sem_description", "check": "graded", "assertion": "o relatório aponta variable sem description, citando arquivo e linha." },
+      { "name": "aponta_output_sem_description", "check": "graded", "assertion": "o relatório aponta output sem description, citando arquivo e linha." },
+      { "name": "cita_arquivo_linha", "check": "graded", "assertion": "cada finding cita arquivo e linha específicos." },
+      { "name": "separa_bloqueante_recomendacao", "check": "graded", "assertion": "o relatório separa o que bloqueia do que é recomendação." },
+      { "name": "nao_edita_projeto", "check": "graded", "assertion": "nenhum arquivo do projeto auditado é modificado — só o relatório é gerado." }
+    ]
+  },
+  {
+    "id": "A2_auditar_azure",
+    "prompt": "audita esse projeto terraform e gera o relatório",
+    "expected_output": "Relatório apontando: pin exato à mão em vez de ~> da latest; provider block no root; módulo do Registry; recurso solto no root; nome de resource repetindo o tipo; location hardcoded; network_rules como bloco aninhado em vez de resource dedicado; variable/output sem description. Cita arquivo:linha, separa bloqueante de recomendação, não edita o projeto.",
+    "files": ["evals/files/azure-nao-conforme/"],
+    "expectations": [
+      { "name": "aponta_pin_exato", "check": "graded", "assertion": "o relatório aponta version com pin exato em vez de ~> da latest, citando arquivo e linha." },
+      { "name": "aponta_modulo_registry", "check": "graded", "assertion": "o relatório aponta módulo do Registry em vez de local, citando arquivo e linha." },
+      { "name": "aponta_recurso_fora_modules", "check": "graded", "assertion": "o relatório aponta resource solto no root, citando arquivo e linha." },
+      { "name": "aponta_nome_repete_tipo", "check": "graded", "assertion": "o relatório aponta nome de resource repetindo o tipo, citando arquivo e linha." },
+      { "name": "aponta_location_hardcoded", "check": "graded", "assertion": "o relatório aponta location hardcoded, citando arquivo e linha." },
+      { "name": "cita_arquivo_linha", "check": "graded", "assertion": "cada finding cita arquivo e linha específicos." },
+      { "name": "provider_sem_recurso_outro_provider", "check": "graded", "assertion": "nenhuma correção sugerida introduz resource aws_ ou google_." }
+    ]
+  },
+  {
+    "id": "A3_auditar_gcp",
+    "prompt": "audita esse projeto terraform e gera o relatório",
+    "expected_output": "Relatório apontando: provider sem ~>/sem version; provider e region hardcoded; módulo do Registry; recurso solto no root; nome de resource repetindo o tipo; location hardcoded; variable/output sem description. Cita arquivo:linha, separa bloqueante de recomendação, não edita o projeto.",
+    "files": ["evals/files/gcp-nao-conforme/"],
+    "expectations": [
+      { "name": "aponta_provider_sem_pin", "check": "graded", "assertion": "o relatório aponta required_providers sem ~>/sem version, citando arquivo e linha." },
+      { "name": "aponta_modulo_registry", "check": "graded", "assertion": "o relatório aponta módulo do Registry em vez de local, citando arquivo e linha." },
+      { "name": "aponta_recurso_fora_modules", "check": "graded", "assertion": "o relatório aponta resource solto no root, citando arquivo e linha." },
+      { "name": "aponta_nome_repete_tipo", "check": "graded", "assertion": "o relatório aponta nome de resource repetindo o tipo, citando arquivo e linha." },
+      { "name": "cita_arquivo_linha", "check": "graded", "assertion": "cada finding cita arquivo e linha específicos." },
+      { "name": "provider_sem_recurso_outro_provider", "check": "graded", "assertion": "nenhuma correção sugerida introduz resource aws_ ou azurerm_." }
+    ]
+  }
+]

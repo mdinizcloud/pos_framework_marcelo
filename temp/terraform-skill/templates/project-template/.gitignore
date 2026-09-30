@@ -1,0 +1,20 @@
+# State nunca vai pro commit — guarda segredo em texto plano.
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Cache/plugins locais
+.terraform/
+.terraform.tfstate.lock.info
+
+# Cache do Terragrunt
+.terragrunt-cache/
+
+# Arquivos de plan e vars com segredo
+*.tfplan
+*.auto.tfvars
+override.tf
+override.tf.json
+
+# NÃO ignorar o lock file — ele DEVE ser commitado (reprodutibilidade):
+!.terraform.lock.hcl
